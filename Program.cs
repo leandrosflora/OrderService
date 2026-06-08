@@ -1,25 +1,54 @@
+using System.Text.Json.Serialization;
+using Microsoft.EntityFrameworkCore;
+using OrderService.Api;
+using OrderService.Application;
+using OrderService.Application.Ports;
+using OrderService.Infrastructure.Messaging;
+using OrderService.Infrastructure.Outbox;
+using OrderService.Infrastructure.Persistence;
+
 var builder = WebApplication.CreateBuilder(args);
 
-// Add services to the container.
-
-builder.Services.AddControllers();
-// Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
+builder.Services.AddProblemDetails();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
+builder.Services.ConfigureHttpJsonOptions(options =>
+{
+    options.SerializerOptions.Converters.Add(new JsonStringEnumConverter());
+});
+
+builder.Services.AddDbContext<OrderDbContext>(options =>
+{
+    var connectionString = builder.Configuration.GetConnectionString("OrderDb")
+        ?? "Host=localhost;Database=orderservice;Username=postgres;Password=postgres";
+
+    options.UseNpgsql(connectionString);
+});
+
+builder.Services.AddScoped<OrderProcessManager>();
+builder.Services.AddScoped<OrderCancellationService>();
+
+builder.Services.AddScoped<IOrderRepository, OrderRepository>();
+builder.Services.AddScoped<IOutboxWriter, OutboxWriter>();
+builder.Services.AddScoped<IIntegrationEventBus, KafkaIntegrationEventBus>();
+
+builder.Services.AddHostedService<OutboxDispatcher>();
+
+builder.Services.AddHealthChecks()
+    .AddDbContextCheck<OrderDbContext>();
+
 var app = builder.Build();
 
-// Configure the HTTP request pipeline.
+app.UseExceptionHandler();
+
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
     app.UseSwaggerUI();
 }
 
-app.UseHttpsRedirection();
-
-app.UseAuthorization();
-
-app.MapControllers();
+app.MapHealthChecks("/health");
+app.MapOrderEndpoints();
 
 app.Run();
