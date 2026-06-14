@@ -14,6 +14,8 @@ CREATE TABLE orders (
     capacity_reservation_id UUID NULL,
     payment_authorization_id UUID NULL,
     shipment_id UUID NULL,
+    shipment_status VARCHAR(100) NULL,
+    shipment_status_updated_at TIMESTAMPTZ NULL,
     inventory_state VARCHAR(30) NOT NULL,
     capacity_state VARCHAR(30) NOT NULL,
     payment_state VARCHAR(30) NOT NULL,
