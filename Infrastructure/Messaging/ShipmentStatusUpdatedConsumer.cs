@@ -45,7 +45,7 @@ public sealed class ShipmentStatusUpdatedConsumer : BackgroundService
                 var result = consumer.Consume(stoppingToken);
                 var envelope = JsonSerializer.Deserialize<IntegrationEventEnvelope<ShipmentStatusUpdatedIntegrationEvent>>(result.Message.Value, JsonOptions);
 
-                if (envelope is null || envelope.EventType != _options.Topics.ShipmentStatusUpdated)
+                if (envelope is null || envelope.EventType != "shipment.status.updated")
                 {
                     _logger.LogWarning("Ignoring Kafka message from topic {Topic} with key {Key}: unsupported event envelope", result.Topic, result.Message.Key);
                     consumer.Commit(result);

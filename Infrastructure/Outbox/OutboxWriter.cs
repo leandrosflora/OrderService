@@ -6,6 +6,7 @@ namespace OrderService.Infrastructure.Outbox;
 
 public sealed class OutboxWriter : IOutboxWriter
 {
+    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
     private readonly OrderDbContext _dbContext;
 
     public OutboxWriter(OrderDbContext dbContext)
@@ -23,7 +24,7 @@ public sealed class OutboxWriter : IOutboxWriter
             topic,
             typeof(T).Name,
             aggregateKey,
-            JsonSerializer.Serialize(message));
+            JsonSerializer.Serialize(message, JsonOptions));
 
         await _dbContext.OutboxMessages.AddAsync(outboxMessage, cancellationToken);
     }

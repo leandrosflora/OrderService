@@ -419,6 +419,7 @@ Content-Type: application/json
 
 | Evento | Tópico | Quando é publicado |
 | --- | --- | --- |
+| `OrderCreatedIntegrationEvent` | `order.created` | Após criação do pedido a partir do checkout confirmado, com payload logístico completo para o E2E com ShipmentService. |
 | `OrderConfirmedIntegrationEvent` | `order.events` | Após captura de pagamento bem-sucedida. |
 | `OrderCancelledIntegrationEvent` | `order.events` | Após cancelamento manual ou falha compensável da Saga. |
 
@@ -688,6 +689,110 @@ dotnet run
    - `shipment.status.updated`
 3. Dispare o fluxo de criação de pedido pelo evento de checkout confirmado usado no ambiente end-to-end.
 4. Confirme no tópico `order.created` uma mensagem com envelope contendo `eventId`, `eventType`, `schemaVersion`, `occurredAt`, `correlationId`, `producer` e `payload`.
-5. Publique um evento `shipment.status.updated` com o envelope padrão e payload com `orderId`, `shipmentId`, `status` e `updatedAt`; em seguida, consulte o pedido e valide os campos logísticos locais.
+5. Publique um evento `shipment.status.updated` com o envelope padrão e payload canônico com `orderId`, `shipmentId`, `currentStatus` e `statusDate`; em seguida, consulte o pedido e valide os campos logísticos locais.
 
 Os logs do serviço informam `topic`, `message key`, `eventType` e `correlationId` nas publicações e consumos Kafka.
+
+
+## Contratos Kafka canônicos para E2E
+
+### `order.created` publicado pelo OrderService
+
+Decisão técnica: para fechar o E2E Kafka local, o `OrderService` publica `order.created` enriquecido com os dados logísticos recebidos no `CheckoutConfirmedIntegrationEvent`. Essa decisão mantém o `OrderService` como dono do pedido comercial e apenas transporta dados necessários para que o `ShipmentService` crie a entrega; a criação física da entrega permanece responsabilidade do `ShipmentService`. Em ambientes `Development`, quando mocks antigos de checkout ainda não enviarem os campos logísticos obrigatórios, o serviço usa defaults controlados com logs estruturados. Em ambientes não Development, campos obrigatórios ausentes interrompem o processamento para evitar payload silenciosamente inválido.
+
+Envelope padrão:
+
+```json
+{
+  "eventId": "uuid",
+  "eventType": "order.created",
+  "schemaVersion": "1.0",
+  "occurredAt": "2026-06-14T12:00:00Z",
+  "correlationId": "uuid",
+  "producer": "order-service",
+  "payload": {}
+}
+```
+
+Payload publicado:
+
+```json
+{
+  "messageId": "uuid",
+  "orderId": "uuid",
+  "checkoutId": "uuid",
+  "buyerId": "uuid",
+  "sellerId": "uuid",
+  "shippingPromiseId": "promise_123",
+  "routeId": "route_123",
+  "carrierCode": "carrier_1",
+  "serviceLevelCode": "same_day",
+  "originNodeId": "uuid",
+  "promisedDeliveryDate": "2026-06-15",
+  "destination": {
+    "street": "Av. Paulista",
+    "number": "1000",
+    "city": "São Paulo",
+    "state": "SP",
+    "zipCode": "01310-100",
+    "country": "BR"
+  },
+  "packages": [
+    {
+      "packageId": "pkg_123",
+      "weightKg": 1.2,
+      "heightCm": 10,
+      "widthCm": 20,
+      "lengthCm": 30,
+      "items": [
+        {
+          "skuId": "uuid",
+          "quantity": 1
+        }
+      ]
+    }
+  ],
+  "totalAmount": 129.9,
+  "currency": "BRL",
+  "createdAt": "2026-06-14T12:00:00Z"
+}
+```
+
+O `CheckoutConfirmedIntegrationEvent` aceito por este serviço foi estendido de forma compatível com mocks existentes para carregar `routeId`, `carrierCode`, `serviceLevelCode`, `originNodeId`, `promisedDeliveryDate`, `destination` e `packages`. Os campos permanecem opcionais no contrato de entrada para permitir desserialização de mensagens antigas em desenvolvimento, mas são tratados como obrigatórios para publicação canônica fora de `Development`.
+
+### `shipment.status.updated` consumido pelo OrderService
+
+O `OrderService` consome o evento canônico produzido pelo domínio logístico para manter somente a visão local do status de envio do pedido. A rastreabilidade detalhada e histórico completo continuam sob responsabilidade do `TrackingService`; a criação física e evolução operacional da entrega continuam sob responsabilidade do `ShipmentService`.
+
+Envelope esperado:
+
+```json
+{
+  "eventId": "uuid",
+  "eventType": "shipment.status.updated",
+  "schemaVersion": "1.0",
+  "occurredAt": "2026-06-14T12:00:00Z",
+  "correlationId": "uuid",
+  "producer": "shipment-service",
+  "payload": {}
+}
+```
+
+Payload consumido:
+
+```json
+{
+  "shipmentId": "uuid",
+  "orderId": "uuid",
+  "buyerId": "uuid",
+  "trackingCode": "BR123456789ML",
+  "carrierCode": "carrier_1",
+  "previousStatus": "created",
+  "currentStatus": "in_transit",
+  "statusDate": "2026-06-14T12:30:00Z",
+  "estimatedDeliveryDate": "2026-06-15",
+  "exceptionCode": null
+}
+```
+
+O consumidor valida `eventType == "shipment.status.updated"`, usa `eventId` como chave de idempotência no Inbox, localiza o pedido por `orderId` e mapeia explicitamente `currentStatus`/`statusDate` para a visão interna `ShipmentStatus`/`ShipmentStatusUpdatedAt`. O serviço não espera mais os campos legados `status` e `updatedAt` nesse evento.
