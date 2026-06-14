@@ -2,6 +2,8 @@ using Microsoft.EntityFrameworkCore;
 using OrderService.Application.Ports;
 using OrderService.Contracts;
 using OrderService.Domain;
+using Microsoft.Extensions.Options;
+using OrderService.Infrastructure.Messaging;
 using OrderService.Infrastructure.Persistence;
 
 namespace OrderService.Application;
@@ -10,11 +12,13 @@ public sealed class OrderProcessManager
 {
     private readonly OrderDbContext _dbContext;
     private readonly IOutboxWriter _outbox;
+    private readonly KafkaOptions _kafkaOptions;
 
-    public OrderProcessManager(OrderDbContext dbContext, IOutboxWriter outbox)
+    public OrderProcessManager(OrderDbContext dbContext, IOutboxWriter outbox, IOptions<KafkaOptions> kafkaOptions)
     {
         _dbContext = dbContext;
         _outbox = outbox;
+        _kafkaOptions = kafkaOptions.Value;
     }
 
     public async Task HandleAsync(CheckoutConfirmedIntegrationEvent integrationEvent, CancellationToken cancellationToken)
@@ -48,6 +52,29 @@ public sealed class OrderProcessManager
                     items);
 
                 await _dbContext.Orders.AddAsync(order, cancellationToken);
+
+                var orderCreatedEventId = Guid.NewGuid();
+
+                await _outbox.AddAsync(
+                    topic: _kafkaOptions.Topics.OrderCreated,
+                    aggregateKey: order.Id.ToString(),
+                    message: new IntegrationEventEnvelope<OrderCreatedIntegrationEvent>(
+                        orderCreatedEventId,
+                        _kafkaOptions.Topics.OrderCreated,
+                        "1.0",
+                        DateTimeOffset.UtcNow,
+                        integrationEvent.MessageId.ToString(),
+                        "order-service",
+                        new OrderCreatedIntegrationEvent(
+                            orderCreatedEventId,
+                            order.Id,
+                            order.CheckoutId,
+                            order.BuyerId,
+                            order.SellerId,
+                            order.TotalAmount,
+                            order.Currency,
+                            order.CreatedAt)),
+                    cancellationToken);
 
                 await _outbox.AddAsync(
                     topic: "inventory.commands",
@@ -292,6 +319,26 @@ public sealed class OrderProcessManager
             {
                 var order = await GetOrderAsync(integrationEvent.OrderId, cancellationToken);
                 order.MarkPaymentCaptureFailed();
+            },
+            cancellationToken);
+    }
+
+
+    public async Task HandleShipmentStatusUpdatedAsync(
+        Guid eventId,
+        ShipmentStatusUpdatedIntegrationEvent integrationEvent,
+        CancellationToken cancellationToken)
+    {
+        await ExecuteOnceAsync(
+            eventId,
+            nameof(ShipmentStatusUpdatedIntegrationEvent),
+            async () =>
+            {
+                var order = await GetOrderAsync(integrationEvent.OrderId, cancellationToken);
+                order.UpdateShipmentStatus(
+                    integrationEvent.ShipmentId,
+                    integrationEvent.Status,
+                    integrationEvent.UpdatedAt);
             },
             cancellationToken);
     }

@@ -41,6 +41,8 @@ public sealed class OrderDbContext : DbContext
             entity.Property(x => x.CapacityReservationId).HasColumnName("capacity_reservation_id");
             entity.Property(x => x.PaymentAuthorizationId).HasColumnName("payment_authorization_id");
             entity.Property(x => x.ShipmentId).HasColumnName("shipment_id");
+            entity.Property(x => x.ShipmentStatus).HasColumnName("shipment_status").HasMaxLength(100);
+            entity.Property(x => x.ShipmentStatusUpdatedAt).HasColumnName("shipment_status_updated_at");
             entity.Property(x => x.InventoryState).HasColumnName("inventory_state").HasConversion<string>().HasMaxLength(30);
             entity.Property(x => x.CapacityState).HasColumnName("capacity_state").HasConversion<string>().HasMaxLength(30);
             entity.Property(x => x.PaymentState).HasColumnName("payment_state").HasConversion<string>().HasMaxLength(30);

@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+using Confluent.Kafka;
 using Microsoft.EntityFrameworkCore;
 using OrderService.Api;
 using OrderService.Application;
@@ -28,12 +29,26 @@ builder.Services.AddDbContext<OrderDbContext>(options =>
 
 builder.Services.AddScoped<OrderProcessManager>();
 builder.Services.AddScoped<OrderCancellationService>();
+builder.Services.Configure<KafkaOptions>(builder.Configuration.GetSection(KafkaOptions.SectionName));
+builder.Services.AddSingleton<IProducer<string, string>>(serviceProvider =>
+{
+    var options = serviceProvider.GetRequiredService<Microsoft.Extensions.Options.IOptions<KafkaOptions>>().Value;
+    return new ProducerBuilder<string, string>(new ProducerConfig
+    {
+        BootstrapServers = options.BootstrapServers,
+        Acks = Acks.All,
+        EnableIdempotence = true,
+        MessageSendMaxRetries = 3,
+        RetryBackoffMs = 250
+    }).Build();
+});
 
 builder.Services.AddScoped<IOrderRepository, OrderRepository>();
 builder.Services.AddScoped<IOutboxWriter, OutboxWriter>();
 builder.Services.AddScoped<IIntegrationEventBus, KafkaIntegrationEventBus>();
 
 builder.Services.AddHostedService<OutboxDispatcher>();
+builder.Services.AddHostedService<ShipmentStatusUpdatedConsumer>();
 
 builder.Services.AddHealthChecks()
     .AddDbContextCheck<OrderDbContext>();

@@ -56,7 +56,7 @@ A orquestração é feita por meio de transações locais e mensagens de integra
 - Reservar capacidade de fulfillment de fato.
 - Autorizar, capturar, estornar ou voidar pagamento de fato.
 - Criar remessa/envio de fato.
-- Implementar broker Kafka real; a implementação atual registra publicações em log.
+- Manter apenas a visão/status logístico local do pedido ao consumir atualizações de envio; o rastreamento completo permanece fora do escopo.
 - Expor endpoints administrativos para reprocessamento de Outbox ou Inbox.
 
 ## Tecnologias e dependências
@@ -630,16 +630,64 @@ E o health check em:
 - **Idempotência por mensagem**: eventos de integração dependem de `MessageId` único.
 - **Idempotência no cancelamento HTTP**: depende do header `Idempotency-Key`.
 - **Publicação assíncrona**: as mensagens são persistidas no Outbox e publicadas posteriormente pelo dispatcher.
-- **Implementação de broker simulada**: o barramento atual não envia mensagens para Kafka real; apenas loga a publicação.
+- **Kafka real com Outbox**: publicações usam Kafka real via `Confluent.Kafka`, mantendo persistência transacional prévia no Outbox.
 - **Swagger apenas em desenvolvimento**: a UI do Swagger é habilitada quando o ambiente é `Development`.
 
 ## Próximos passos recomendados
 
-- Implementar consumidores reais para eventos de integração e conectá-los ao `OrderProcessManager`.
-- Substituir `KafkaIntegrationEventBus` por uma implementação real de Kafka ou broker padrão da organização.
+- Expandir consumidores reais para outros eventos de integração, sempre respeitando os contratos canônicos.
+- Avaliar métricas e alertas específicos para producer/consumer Kafka em produção.
 - Adicionar migrations do EF Core ou pipeline automatizado de aplicação do schema.
 - Adicionar testes unitários para transições do agregado `Order`.
 - Adicionar testes de integração para Inbox, Outbox e endpoints HTTP.
 - Mapear exceções de aplicação para respostas HTTP padronizadas, especialmente `KeyNotFoundException` para `404 Not Found`.
 - Adicionar observabilidade com tracing distribuído, métricas de Outbox e dashboards de pedidos por status.
 - Implementar estratégia operacional para pedidos em `PaymentReview`.
+
+## Kafka local real
+
+Este serviço agora usa Kafka real com `Confluent.Kafka` para o escopo canônico do OrderService:
+
+- produz `order.created` quando um pedido é criado com sucesso a partir de `CheckoutConfirmedIntegrationEvent`;
+- consome `shipment.status.updated` para atualizar somente a visão/status logístico local do pedido, sem assumir responsabilidades do TrackingService.
+
+A configuração padrão para testes end-to-end locais usa o broker exposto pelo `docker-compose` do repositório de arquitetura em `localhost:9092`:
+
+```json
+{
+  "Kafka": {
+    "BootstrapServers": "localhost:9092",
+    "ConsumerGroupId": "order-service",
+    "Topics": {
+      "OrderCreated": "order.created",
+      "ShipmentStatusUpdated": "shipment.status.updated"
+    }
+  }
+}
+```
+
+> Importante: o Kafka UI em `http://localhost:8088` é apenas interface web. Os microserviços devem apontar para o broker `localhost:9092`.
+
+### Como executar localmente com Kafka
+
+1. Suba a infraestrutura local no repositório `meli-envios-architecture` conforme o `docker-compose` desse repositório.
+2. Garanta que o PostgreSQL do `OrderService` esteja acessível e aplique `Infrastructure/Persistence/schema.sql` caso o banco ainda não exista.
+3. Restaure, compile e execute o serviço:
+
+```bash
+dotnet restore
+dotnet build
+dotnet run
+```
+
+### Como validar no Kafka UI
+
+1. Abra `http://localhost:8088`.
+2. Acesse o cluster local e verifique os tópicos contratados:
+   - `order.created`
+   - `shipment.status.updated`
+3. Dispare o fluxo de criação de pedido pelo evento de checkout confirmado usado no ambiente end-to-end.
+4. Confirme no tópico `order.created` uma mensagem com envelope contendo `eventId`, `eventType`, `schemaVersion`, `occurredAt`, `correlationId`, `producer` e `payload`.
+5. Publique um evento `shipment.status.updated` com o envelope padrão e payload com `orderId`, `shipmentId`, `status` e `updatedAt`; em seguida, consulte o pedido e valide os campos logísticos locais.
+
+Os logs do serviço informam `topic`, `message key`, `eventType` e `correlationId` nas publicações e consumos Kafka.

@@ -17,6 +17,8 @@ public sealed class Order
     public Guid? CapacityReservationId { get; private set; }
     public Guid? PaymentAuthorizationId { get; private set; }
     public Guid? ShipmentId { get; private set; }
+    public string? ShipmentStatus { get; private set; }
+    public DateTimeOffset? ShipmentStatusUpdatedAt { get; private set; }
     public ReservationState InventoryState { get; private set; }
     public ReservationState CapacityState { get; private set; }
     public PaymentState PaymentState { get; private set; }
@@ -312,6 +314,29 @@ public sealed class Order
 
         PaymentState = PaymentState.Failed;
         Status = OrderStatus.PaymentReview;
+        Touch();
+    }
+
+    public void UpdateShipmentStatus(Guid shipmentId, string status, DateTimeOffset updatedAt)
+    {
+        if (shipmentId == Guid.Empty)
+        {
+            throw new ArgumentException("ShipmentId is required", nameof(shipmentId));
+        }
+
+        if (string.IsNullOrWhiteSpace(status))
+        {
+            throw new ArgumentException("Shipment status is required", nameof(status));
+        }
+
+        if (ShipmentId.HasValue && ShipmentId.Value != shipmentId)
+        {
+            return;
+        }
+
+        ShipmentId ??= shipmentId;
+        ShipmentStatus = status;
+        ShipmentStatusUpdatedAt = updatedAt;
         Touch();
     }
 

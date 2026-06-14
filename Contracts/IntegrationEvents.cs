@@ -93,3 +93,20 @@ public sealed record OrderCancelledIntegrationEvent(
     Guid OrderId,
     string Status,
     string? CancellationReason);
+
+
+public sealed record OrderCreatedIntegrationEvent(
+    Guid MessageId,
+    Guid OrderId,
+    Guid CheckoutId,
+    Guid BuyerId,
+    Guid SellerId,
+    decimal TotalAmount,
+    string Currency,
+    DateTimeOffset CreatedAt);
+
+public sealed record ShipmentStatusUpdatedIntegrationEvent(
+    Guid OrderId,
+    Guid ShipmentId,
+    string Status,
+    DateTimeOffset UpdatedAt);
