@@ -13,12 +13,21 @@ public sealed class OrderProcessManager
     private readonly OrderDbContext _dbContext;
     private readonly IOutboxWriter _outbox;
     private readonly KafkaOptions _kafkaOptions;
+    private readonly IHostEnvironment _environment;
+    private readonly ILogger<OrderProcessManager> _logger;
 
-    public OrderProcessManager(OrderDbContext dbContext, IOutboxWriter outbox, IOptions<KafkaOptions> kafkaOptions)
+    public OrderProcessManager(
+        OrderDbContext dbContext,
+        IOutboxWriter outbox,
+        IOptions<KafkaOptions> kafkaOptions,
+        IHostEnvironment environment,
+        ILogger<OrderProcessManager> logger)
     {
         _dbContext = dbContext;
         _outbox = outbox;
         _kafkaOptions = kafkaOptions.Value;
+        _environment = environment;
+        _logger = logger;
     }
 
     public async Task HandleAsync(CheckoutConfirmedIntegrationEvent integrationEvent, CancellationToken cancellationToken)
@@ -65,15 +74,7 @@ public sealed class OrderProcessManager
                         DateTimeOffset.UtcNow,
                         integrationEvent.MessageId.ToString(),
                         "order-service",
-                        new OrderCreatedIntegrationEvent(
-                            orderCreatedEventId,
-                            order.Id,
-                            order.CheckoutId,
-                            order.BuyerId,
-                            order.SellerId,
-                            order.TotalAmount,
-                            order.Currency,
-                            order.CreatedAt)),
+                        CreateOrderCreatedIntegrationEvent(orderCreatedEventId, order, integrationEvent)),
                     cancellationToken);
 
                 await _outbox.AddAsync(
@@ -337,10 +338,152 @@ public sealed class OrderProcessManager
                 var order = await GetOrderAsync(integrationEvent.OrderId, cancellationToken);
                 order.UpdateShipmentStatus(
                     integrationEvent.ShipmentId,
-                    integrationEvent.Status,
-                    integrationEvent.UpdatedAt);
+                    integrationEvent.CurrentStatus,
+                    integrationEvent.StatusDate);
             },
             cancellationToken);
+    }
+
+    private OrderCreatedIntegrationEvent CreateOrderCreatedIntegrationEvent(
+        Guid messageId,
+        Order order,
+        CheckoutConfirmedIntegrationEvent checkoutEvent)
+    {
+        var routeId = GetRequiredShipmentValue(checkoutEvent.RouteId, nameof(checkoutEvent.RouteId), order);
+        var carrierCode = GetRequiredShipmentValue(checkoutEvent.CarrierCode, nameof(checkoutEvent.CarrierCode), order);
+        var serviceLevelCode = GetRequiredShipmentValue(checkoutEvent.ServiceLevelCode, nameof(checkoutEvent.ServiceLevelCode), order);
+        var originNodeId = checkoutEvent.OriginNodeId ?? GetMockOriginNodeId(order, checkoutEvent);
+        var promisedDeliveryDate = checkoutEvent.PromisedDeliveryDate ?? GetMockPromisedDeliveryDate(order);
+        var destination = checkoutEvent.Destination ?? GetMockDestination(order);
+        var packages = checkoutEvent.Packages is { Count: > 0 }
+            ? checkoutEvent.Packages
+            : GetMockPackages(order, checkoutEvent);
+
+        return new OrderCreatedIntegrationEvent(
+            messageId,
+            order.Id,
+            order.CheckoutId,
+            order.BuyerId,
+            order.SellerId,
+            order.ShippingPromiseId,
+            routeId,
+            carrierCode,
+            serviceLevelCode,
+            originNodeId,
+            promisedDeliveryDate,
+            destination,
+            packages,
+            order.TotalAmount,
+            order.Currency,
+            order.CreatedAt);
+    }
+
+    private string GetRequiredShipmentValue(string? value, string fieldName, Order order)
+    {
+        if (!string.IsNullOrWhiteSpace(value))
+        {
+            return value;
+        }
+
+        if (!_environment.IsDevelopment())
+        {
+            throw new InvalidOperationException($"CheckoutConfirmedIntegrationEvent is missing required shipment field {fieldName} for order {order.Id}");
+        }
+
+        var fallback = fieldName switch
+        {
+            nameof(CheckoutConfirmedIntegrationEvent.RouteId) => $"route_{order.ShippingPromiseId}",
+            nameof(CheckoutConfirmedIntegrationEvent.CarrierCode) => "carrier_mock",
+            nameof(CheckoutConfirmedIntegrationEvent.ServiceLevelCode) => "standard",
+            _ => throw new InvalidOperationException($"No Development fallback is configured for {fieldName}")
+        };
+
+        _logger.LogWarning(
+            "CheckoutConfirmedIntegrationEvent missing required shipment field {FieldName} for order {OrderId}; using Development fallback {Fallback}",
+            fieldName,
+            order.Id,
+            fallback);
+
+        return fallback;
+    }
+
+    private Guid GetMockOriginNodeId(Order order, CheckoutConfirmedIntegrationEvent checkoutEvent)
+    {
+        if (!_environment.IsDevelopment())
+        {
+            throw new InvalidOperationException($"CheckoutConfirmedIntegrationEvent is missing required shipment field {nameof(checkoutEvent.OriginNodeId)} for order {order.Id}");
+        }
+
+        var fallback = checkoutEvent.Items.Select(x => x.FulfillmentCenterId).FirstOrDefault(x => x != Guid.Empty);
+        if (fallback == Guid.Empty)
+        {
+            fallback = order.SellerId;
+        }
+
+        _logger.LogWarning(
+            "CheckoutConfirmedIntegrationEvent missing required shipment field {FieldName} for order {OrderId}; using Development fallback {Fallback}",
+            nameof(checkoutEvent.OriginNodeId),
+            order.Id,
+            fallback);
+
+        return fallback;
+    }
+
+    private DateOnly GetMockPromisedDeliveryDate(Order order)
+    {
+        if (!_environment.IsDevelopment())
+        {
+            throw new InvalidOperationException($"CheckoutConfirmedIntegrationEvent is missing required shipment field PromisedDeliveryDate for order {order.Id}");
+        }
+
+        var fallback = DateOnly.FromDateTime(DateTime.UtcNow.Date.AddDays(1));
+        _logger.LogWarning(
+            "CheckoutConfirmedIntegrationEvent missing required shipment field {FieldName} for order {OrderId}; using Development fallback {Fallback}",
+            nameof(CheckoutConfirmedIntegrationEvent.PromisedDeliveryDate),
+            order.Id,
+            fallback);
+        return fallback;
+    }
+
+    private OrderDestinationDto GetMockDestination(Order order)
+    {
+        if (!_environment.IsDevelopment())
+        {
+            throw new InvalidOperationException($"CheckoutConfirmedIntegrationEvent is missing required shipment field Destination for order {order.Id}");
+        }
+
+        _logger.LogWarning(
+            "CheckoutConfirmedIntegrationEvent missing required shipment field {FieldName} for order {OrderId}; using controlled Development fallback",
+            nameof(CheckoutConfirmedIntegrationEvent.Destination),
+            order.Id);
+
+        return new OrderDestinationDto("Av. Paulista", "1000", "São Paulo", "SP", "01310-100", "BR");
+    }
+
+    private IReadOnlyList<OrderPackageDto> GetMockPackages(Order order, CheckoutConfirmedIntegrationEvent checkoutEvent)
+    {
+        if (!_environment.IsDevelopment())
+        {
+            throw new InvalidOperationException($"CheckoutConfirmedIntegrationEvent is missing required shipment field Packages for order {order.Id}");
+        }
+
+        _logger.LogWarning(
+            "CheckoutConfirmedIntegrationEvent missing required shipment field {FieldName} for order {OrderId}; deriving Development fallback from checkout items",
+            nameof(CheckoutConfirmedIntegrationEvent.Packages),
+            order.Id);
+
+        return
+        [
+            new OrderPackageDto(
+                $"pkg_{order.Id:N}",
+                1.0m,
+                10m,
+                20m,
+                30m,
+                checkoutEvent.Items
+                    .Select(x => new OrderPackageItemDto(x.SkuId, x.Quantity))
+                    .ToList())
+        ];
     }
 
     private Task WritePaymentAuthorizationAsync(Order order, CancellationToken cancellationToken)

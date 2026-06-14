@@ -11,7 +11,14 @@ public sealed record CheckoutConfirmedIntegrationEvent(
     string ShippingPromiseId,
     Guid PricingQuoteId,
     string PaymentMethodToken,
-    IReadOnlyList<CheckoutConfirmedItem> Items);
+    IReadOnlyList<CheckoutConfirmedItem> Items,
+    string? RouteId = null,
+    string? CarrierCode = null,
+    string? ServiceLevelCode = null,
+    Guid? OriginNodeId = null,
+    DateOnly? PromisedDeliveryDate = null,
+    OrderDestinationDto? Destination = null,
+    IReadOnlyList<OrderPackageDto>? Packages = null);
 
 public sealed record CheckoutConfirmedItem(
     Guid SkuId,
@@ -94,6 +101,25 @@ public sealed record OrderCancelledIntegrationEvent(
     string Status,
     string? CancellationReason);
 
+public sealed record OrderDestinationDto(
+    string Street,
+    string Number,
+    string City,
+    string State,
+    string ZipCode,
+    string Country);
+
+public sealed record OrderPackageDto(
+    string PackageId,
+    decimal WeightKg,
+    decimal HeightCm,
+    decimal WidthCm,
+    decimal LengthCm,
+    IReadOnlyList<OrderPackageItemDto> Items);
+
+public sealed record OrderPackageItemDto(
+    Guid SkuId,
+    int Quantity);
 
 public sealed record OrderCreatedIntegrationEvent(
     Guid MessageId,
@@ -101,12 +127,26 @@ public sealed record OrderCreatedIntegrationEvent(
     Guid CheckoutId,
     Guid BuyerId,
     Guid SellerId,
+    string ShippingPromiseId,
+    string RouteId,
+    string CarrierCode,
+    string ServiceLevelCode,
+    Guid OriginNodeId,
+    DateOnly PromisedDeliveryDate,
+    OrderDestinationDto Destination,
+    IReadOnlyList<OrderPackageDto> Packages,
     decimal TotalAmount,
     string Currency,
     DateTimeOffset CreatedAt);
 
 public sealed record ShipmentStatusUpdatedIntegrationEvent(
-    Guid OrderId,
     Guid ShipmentId,
-    string Status,
-    DateTimeOffset UpdatedAt);
+    Guid OrderId,
+    Guid BuyerId,
+    string TrackingCode,
+    string CarrierCode,
+    string? PreviousStatus,
+    string CurrentStatus,
+    DateTimeOffset StatusDate,
+    DateOnly? EstimatedDeliveryDate,
+    string? ExceptionCode);
