@@ -10,3 +10,11 @@ public sealed record IntegrationEventEnvelope<T>(
     [property: JsonPropertyName("correlationId")] string CorrelationId,
     [property: JsonPropertyName("producer")] string Producer,
     [property: JsonPropertyName("payload")] T Payload);
+
+internal sealed record SagaPayload(
+    [property: JsonPropertyName("orderId")] Guid OrderId,
+    [property: JsonPropertyName("reservationId")] Guid ReservationId);
+
+internal sealed record SagaFailurePayload(
+    [property: JsonPropertyName("orderId")] Guid OrderId,
+    [property: JsonPropertyName("reason")] string? Reason);

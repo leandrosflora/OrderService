@@ -67,6 +67,12 @@ builder.Services.AddScoped<IIntegrationEventBus, KafkaIntegrationEventBus>();
 
 builder.Services.AddHostedService<OutboxDispatcher>();
 builder.Services.AddHostedService<ShipmentStatusUpdatedConsumer>();
+builder.Services.AddHostedService<CheckoutConfirmedConsumer>();
+builder.Services.AddHostedService<InventoryReservedConsumer>();
+builder.Services.AddHostedService<InventoryReservationFailedConsumer>();
+builder.Services.AddHostedService<FulfillmentCapacityReservedConsumer>();
+builder.Services.AddHostedService<FulfillmentCapacityFailedConsumer>();
+builder.Services.AddHostedService<ShipmentCreatedConsumer>();
 
 builder.Services.AddHealthChecks()
     .AddDbContextCheck<OrderDbContext>();
