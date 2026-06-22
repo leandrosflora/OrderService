@@ -22,7 +22,7 @@ builder.Services.ConfigureHttpJsonOptions(options =>
 builder.Services.AddDbContext<OrderDbContext>(options =>
 {
     var connectionString = builder.Configuration.GetConnectionString("OrderDb")
-        ?? "Host=localhost;Database=orderservice;Username=postgres;Password=postgres";
+        ?? "Host=localhost;Port=5432;Database=logistica_envios;Username=logistica;Password=logistica;Search Path=order_domain,public";
 
     options.UseNpgsql(connectionString);
 });
