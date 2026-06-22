@@ -21,7 +21,7 @@ Ao implementar ou alterar código:
 1. Mantenha o limite de responsabilidade do serviço.
 2. Não mova regra de negócio para outro domínio indevidamente.
 3. Não acesse banco de dados de outro microservice.
-4. Não crie integração HTTP/evento sem validar o contrato em `meli-envios-architecture/docs/contracts`.
+4. Não crie integração HTTP/evento sem validar o contrato em `logistica-envios-demo-arch/docs/contracts`.
 5. Não altere eventos Kafka sem validar `docs/contracts/kafka-events.md`.
 6. Não altere fluxos principais sem considerar os diagramas em `docs/sequence-diagrams`.
 
