@@ -3,7 +3,6 @@ using Xunit;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using OrderService.Application;
 using OrderService.Contracts;
@@ -19,6 +18,7 @@ public sealed class OrderProcessManagerTests : IDisposable
     private readonly SqliteConnection _connection;
     private readonly OrderDbContext _db;
     private readonly FakeOutboxWriter _outbox;
+    private readonly FakeLogger<OrderProcessManager> _logger;
     private readonly OrderProcessManager _sut;
 
     public OrderProcessManagerTests()
@@ -34,6 +34,7 @@ public sealed class OrderProcessManagerTests : IDisposable
         _db.Database.EnsureCreated();
 
         _outbox = new FakeOutboxWriter();
+        _logger = new FakeLogger<OrderProcessManager>();
 
         var kafkaOptions = Options.Create(new KafkaOptions());
         var env = new ProductionEnvironment();
@@ -43,7 +44,7 @@ public sealed class OrderProcessManagerTests : IDisposable
             _outbox,
             kafkaOptions,
             env,
-            NullLogger<OrderProcessManager>.Instance);
+            _logger);
     }
 
     public void Dispose()
@@ -160,6 +161,8 @@ public sealed class OrderProcessManagerTests : IDisposable
         var order = await _db.Orders.SingleAsync(x => x.Id == orderId);
         Assert.Equal(ReservationState.Reserved, order.InventoryState);
         Assert.Equal(OrderStatus.ReservingResources, order.Status);
+        Assert.Contains(_logger.Messages, m =>
+            m.Contains(orderId.ToString()) && m.Contains("Reserved") && m.Contains("Requested"));
     }
 
     [Fact]
@@ -170,9 +173,14 @@ public sealed class OrderProcessManagerTests : IDisposable
         await _sut.HandleAsync(evt, CancellationToken.None);
         _outbox.Reset();
 
-        await _sut.HandleAsync(evt, CancellationToken.None);
+        // ExecuteOnceAsync's inbox check keys on MessageId, so redelivering the same event
+        // is swallowed before HandleAsync's body (and its logging) ever runs; use a second
+        // event with a different MessageId for the same order/reservation to reach the
+        // domain-level idempotency check in Order.MarkInventoryReserved instead.
+        await _sut.HandleAsync(evt with { MessageId = Guid.NewGuid() }, CancellationToken.None);
 
         Assert.Empty(_outbox.Calls);
+        Assert.Contains(_logger.Messages, m => m.Contains("ignored") && m.Contains(orderId.ToString()));
     }
 
     // ─── FulfillmentCapacityReserved ─────────────────────────────────────────
@@ -192,6 +200,22 @@ public sealed class OrderProcessManagerTests : IDisposable
         var order = await _db.Orders.SingleAsync(x => x.Id == orderId);
         Assert.Equal(ReservationState.Reserved, order.CapacityState);
         Assert.Equal(OrderStatus.ReservingResources, order.Status);
+        Assert.Contains(_logger.Messages, m =>
+            m.Contains(orderId.ToString()) && m.Contains("Reserved") && m.Contains("Requested"));
+    }
+
+    [Fact]
+    public async Task HandleAsync_FulfillmentCapacityReserved_IdempotentOnDuplicate()
+    {
+        var orderId = await ProcessCheckoutAsync();
+        var evt = new FulfillmentCapacityReservedIntegrationEvent(Guid.NewGuid(), orderId, Guid.NewGuid());
+        await _sut.HandleAsync(evt, CancellationToken.None);
+        _outbox.Reset();
+
+        await _sut.HandleAsync(evt with { MessageId = Guid.NewGuid() }, CancellationToken.None);
+
+        Assert.Empty(_outbox.Calls);
+        Assert.Contains(_logger.Messages, m => m.Contains("ignored") && m.Contains(orderId.ToString()));
     }
 
     [Fact]

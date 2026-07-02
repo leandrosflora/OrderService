@@ -114,7 +114,21 @@ public sealed class OrderProcessManager
             async () =>
             {
                 var order = await GetOrderAsync(integrationEvent.OrderId, cancellationToken);
+                var wasAlreadyReserved = order.InventoryState is ReservationState.Reserved or ReservationState.Confirmed;
                 var shouldAuthorizePayment = order.MarkInventoryReserved(integrationEvent.ReservationId);
+
+                if (wasAlreadyReserved)
+                {
+                    _logger.LogInformation(
+                        "InventoryReservedIntegrationEvent ignored for order {OrderId}: inventory already {InventoryState}. Capacity state: {CapacityState}",
+                        order.Id, order.InventoryState, order.CapacityState);
+                }
+                else
+                {
+                    _logger.LogInformation(
+                        "Inventory reserved for order {OrderId}. Inventory state: {InventoryState}, capacity state: {CapacityState}",
+                        order.Id, order.InventoryState, order.CapacityState);
+                }
 
                 if (shouldAuthorizePayment)
                 {
@@ -132,7 +146,21 @@ public sealed class OrderProcessManager
             async () =>
             {
                 var order = await GetOrderAsync(integrationEvent.OrderId, cancellationToken);
+                var wasAlreadyReserved = order.CapacityState is ReservationState.Reserved or ReservationState.Confirmed;
                 var shouldAuthorizePayment = order.MarkCapacityReserved(integrationEvent.ReservationId);
+
+                if (wasAlreadyReserved)
+                {
+                    _logger.LogInformation(
+                        "FulfillmentCapacityReservedIntegrationEvent ignored for order {OrderId}: capacity already {CapacityState}. Inventory state: {InventoryState}",
+                        order.Id, order.CapacityState, order.InventoryState);
+                }
+                else
+                {
+                    _logger.LogInformation(
+                        "Fulfillment capacity reserved for order {OrderId}. Capacity state: {CapacityState}, inventory state: {InventoryState}",
+                        order.Id, order.CapacityState, order.InventoryState);
+                }
 
                 if (shouldAuthorizePayment)
                 {
