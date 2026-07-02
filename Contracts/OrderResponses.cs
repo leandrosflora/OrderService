@@ -30,3 +30,13 @@ public sealed record OrderResponse(
     IReadOnlyList<OrderItemResponse> Items);
 
 public sealed record CancelOrderRequest(string Reason);
+
+public sealed record OrderListItemResponse(
+    Guid Id,
+    string Status,
+    decimal ItemsTotal,
+    decimal ShippingPrice,
+    decimal TotalAmount,
+    string Currency,
+    DateTimeOffset CreatedAt,
+    Guid? ShipmentId);

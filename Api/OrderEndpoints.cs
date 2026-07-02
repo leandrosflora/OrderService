@@ -11,6 +11,34 @@ public static class OrderEndpoints
     {
         var group = app.MapGroup("/orders").WithTags("Orders");
 
+        group.MapGet("/", async (
+            Guid? buyerId,
+            OrderDbContext dbContext,
+            CancellationToken cancellationToken) =>
+        {
+            var query = dbContext.Orders.AsNoTracking().AsQueryable();
+
+            if (buyerId is { } buyer)
+            {
+                query = query.Where(x => x.BuyerId == buyer);
+            }
+
+            var orders = await query
+                .OrderByDescending(x => x.CreatedAt)
+                .Select(x => new OrderListItemResponse(
+                    x.Id,
+                    x.Status.ToString(),
+                    x.ItemsTotal,
+                    x.ShippingPrice,
+                    x.TotalAmount,
+                    x.Currency,
+                    x.CreatedAt,
+                    x.ShipmentId))
+                .ToListAsync(cancellationToken);
+
+            return Results.Ok(orders);
+        });
+
         group.MapGet("/{orderId:guid}", async (
             Guid orderId,
             OrderDbContext dbContext,

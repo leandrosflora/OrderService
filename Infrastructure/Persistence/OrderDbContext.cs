@@ -26,7 +26,11 @@ public sealed class OrderDbContext : DbContext
             entity.HasIndex(x => new { x.SellerId, x.CreatedAt });
             entity.HasIndex(x => new { x.Status, x.UpdatedAt });
 
-            entity.Property(x => x.Id).HasColumnName("id");
+            // orders.order_id is the real primary key (and the FK target from order_items);
+            // orders.id is a legacy compat column from an earlier migration and must not be
+            // used as the entity key, or newly inserted orders get two different generated
+            // ids and order_items' FK insert fails against the real order_id.
+            entity.Property(x => x.Id).HasColumnName("order_id");
             entity.Property(x => x.CheckoutId).HasColumnName("checkout_id");
             entity.Property(x => x.BuyerId).HasColumnName("buyer_id");
             entity.Property(x => x.SellerId).HasColumnName("seller_id");

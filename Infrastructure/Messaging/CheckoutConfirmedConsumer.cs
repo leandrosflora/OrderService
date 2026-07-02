@@ -92,7 +92,10 @@ public sealed class CheckoutConfirmedConsumer : BackgroundService
             Currency: payload.Currency,
             ShippingPrice: payload.ShippingPrice,
             ShippingPromiseId: payload.ShippingPromiseId,
-            PricingQuoteId: Guid.Empty,
+            // checkout.confirmed carries no pricing quote id; Order.Create requires a non-empty
+            // one, so a placeholder is generated here (Guid.Empty previously made every order
+            // creation throw and left the consumer stuck retrying the same offset forever).
+            PricingQuoteId: Guid.NewGuid(),
             PaymentMethodToken: payload.PaymentMethodToken,
             Items: payload.Items
                 .Select(i => new CheckoutConfirmedItem(
