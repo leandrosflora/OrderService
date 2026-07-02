@@ -103,9 +103,15 @@ public sealed class CheckoutConfirmedConsumer : BackgroundService
                     $"SKU {i.SkuId:N}",
                     i.Quantity,
                     i.UnitPrice,
-                    Guid.Empty))
+                    // checkout.confirmed carries no per-item fulfillment center id (checkout
+                    // never selects one); ReservationItem rejects Guid.Empty, so fall back to
+                    // the seeded demo fulfillment center until checkout actually resolves this
+                    // per SKU via ProductCatalogService/InventoryService.
+                    DemoFulfillmentCenterId))
                 .ToList());
     }
+
+    private static readonly Guid DemoFulfillmentCenterId = Guid.Parse("33333333-3333-3333-3333-333333333333");
 }
 
 internal sealed record CheckoutConfirmedPayload(

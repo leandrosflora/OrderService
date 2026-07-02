@@ -1,10 +1,18 @@
+using System.Text.Json.Serialization;
+
 namespace OrderService.Contracts;
 
 public sealed record ReserveInventoryCommand(
     Guid MessageId,
     Guid OrderId,
     Guid SellerId,
-    IReadOnlyList<InventoryReservationItem> Items);
+    IReadOnlyList<InventoryReservationItem> Items)
+{
+    // InventoryCommandsConsumer routes on this field; it must match one of the
+    // case labels in its switch statement.
+    [property: JsonPropertyName("commandType")]
+    public string CommandType { get; init; } = "ReserveInventory";
+}
 
 public sealed record InventoryReservationItem(
     Guid SkuId,
@@ -15,7 +23,13 @@ public sealed record ReserveFulfillmentCapacityCommand(
     Guid MessageId,
     Guid OrderId,
     Guid FulfillmentCenterId,
-    int CapacityUnits);
+    int CapacityUnits)
+{
+    // FulfillmentCommandsConsumer routes on this field; it must match one of the
+    // case labels in its switch statement.
+    [property: JsonPropertyName("commandType")]
+    public string CommandType { get; init; } = "ReserveFulfillmentCapacity";
+}
 
 public sealed record AuthorizePaymentCommand(
     Guid MessageId,
@@ -28,12 +42,20 @@ public sealed record AuthorizePaymentCommand(
 public sealed record ConfirmInventoryReservationCommand(
     Guid MessageId,
     Guid OrderId,
-    Guid ReservationId);
+    Guid ReservationId)
+{
+    [property: JsonPropertyName("commandType")]
+    public string CommandType { get; init; } = "ConfirmInventoryReservation";
+}
 
 public sealed record ConfirmFulfillmentCapacityCommand(
     Guid MessageId,
     Guid OrderId,
-    Guid ReservationId);
+    Guid ReservationId)
+{
+    [property: JsonPropertyName("commandType")]
+    public string CommandType { get; init; } = "ConfirmFulfillmentCapacity";
+}
 
 public sealed record CreateShipmentCommand(
     Guid MessageId,
@@ -52,12 +74,20 @@ public sealed record CapturePaymentCommand(
 public sealed record ReleaseInventoryReservationCommand(
     Guid MessageId,
     Guid OrderId,
-    Guid ReservationId);
+    Guid ReservationId)
+{
+    [property: JsonPropertyName("commandType")]
+    public string CommandType { get; init; } = "ReleaseInventoryReservation";
+}
 
 public sealed record ReleaseFulfillmentCapacityCommand(
     Guid MessageId,
     Guid OrderId,
-    Guid ReservationId);
+    Guid ReservationId)
+{
+    [property: JsonPropertyName("commandType")]
+    public string CommandType { get; init; } = "ReleaseFulfillmentCapacity";
+}
 
 public sealed record VoidPaymentAuthorizationCommand(
     Guid MessageId,
